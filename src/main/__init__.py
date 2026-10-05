@@ -36,22 +36,101 @@ class Facing(Enum):
 # ---------------------------------------------------------------------------
 def hp_ratio(hp, max_hp):
     """TODO(Q1)：血量百分比，返回 0-100 的 int；计算与边界规则见题面 Q1 规范。"""
-    raise NotImplementedError("Q1 hp_ratio：题面 Q1·血量百分比与精度保障")
-
+    if hp < 0 or max_hp <= 0:
+        return 0
+    elif hp > max_hp:
+        return 100
+    return int(hp / max_hp * 100)
 
 def status_report(name, robot_type, hp, max_hp, battery):
     """TODO(Q1)：一行自检报告字符串；档位判定与逐字符格式见题面 Q1 规范。"""
-    raise NotImplementedError("Q1 status_report：题面 Q1·电量映射与报告格式")
-
+    pct = hp_ratio(hp, max_hp) ## 档位计算
+    if battery >= 60 :
+        tier = "OK" 
+    elif battery >= 20 :
+        tier = "WARNING" 
+    else :
+        tier = "LOW"
+    return f"{name:<10}|{robot_type:^10}|HP {pct:>3}%|BAT {battery:>3}%|{tier}"
 
 # ---------------------------------------------------------------------------
 # Q2 战斗日志分析（题面 Q2·多源日志解析与统计）
 # ---------------------------------------------------------------------------
+def _parse_line(line):
+    """解析一行，合法返回 [(armor, damage), ...]，脏行返回 None。"""
+    line = line.strip()
+
+    # 空行 / 注释
+    if not line or line.startswith("#"):
+        return None
+
+    # ---- 先尝试 JSON 行 ----
+    if line.startswith("{"):
+        try:
+            data = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        armor = data.get("armor")
+        damage = data.get("damage")
+        if armor not in ("front", "left", "right"):
+            return None
+        # 严格正整数；排除 bool（True/False 也是 int）
+        if not isinstance(damage, int) or isinstance(damage, bool) or damage <= 0:
+            return None
+        return [(armor, damage, data.get("id"))]
+    # ---- 再尝试传感器行 ----
+    result = []
+    for part in line.split(","):   
+        key, sep, value = part.partition(":")
+        if sep != ":" or not key or not value:
+            return None
+        if key not in ("F", "L", "R"):
+            return None
+        if not value.isdigit() or int(value) <= 0:
+            return None
+        armor = {"F": "front", "L": "left", "R": "right"}[key]
+        result.append((armor, int(value), None))
+    return result if result else None
+
 def analyze_damage_log(lines):
     """TODO(Q2)：解析混合格式伤害日志，返回固定契约的统计 dict；
     行格式、去重与统计口径见题面 Q2 规范。"""
-    raise NotImplementedError("Q2 analyze_damage_log：题面 Q2·多源日志解析与统计")
+    by_armor = { "front" : 0 , "left" : 0 , "right" : 0 }
+    total = 0 
+    event_count = 0 
+    seen_ids = set ()
+    for line in lines:
+        parsed = _parse_line(line)
+        if parsed is None:
+            continue
 
+        # parsed 形如 [(armor, damage, id), ...]
+        event_id = parsed[0][2]
+        if event_id is not None:
+            if event_id in seen_ids:
+                continue
+            seen_ids.add(event_id)
+
+        event_count += 1
+        for armor, damage, _ in parsed:
+            by_armor[armor] += damage
+            total += damage
+
+    if event_count == 0:
+        most_hit, avg = None, 0.0
+    else:
+        most_hit = None
+        best = -1
+        for name in ("front", "left", "right"):
+            if by_armor[name] > best:
+                best = by_armor[name]
+                most_hit = name
+        avg = round(total / event_count, 2)
+
+    return {"total": total, "by_armor": by_armor,
+            "most_hit": most_hit, "avg": avg}
 
 # ---------------------------------------------------------------------------
 # Q3 SentryGrid（题面 Q3·载体物理规则）
