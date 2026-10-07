@@ -11,6 +11,7 @@
 - `python main.py`（或 PYTHONPATH=src python -m main）可看 ASCII 演示。
 """
 import json
+from collections import deque
 from enum import Enum
 
 
@@ -42,20 +43,23 @@ def hp_ratio(hp, max_hp):
         return 100
     return int(hp / max_hp * 100)
 
+
 def status_report(name, robot_type, hp, max_hp, battery):
     """TODO(Q1)：一行自检报告字符串；档位判定与逐字符格式见题面 Q1 规范。"""
-    pct = hp_ratio(hp, max_hp) ## 档位计算
-    if battery >= 60 :
-        tier = "OK" 
-    elif battery >= 20 :
-        tier = "WARNING" 
-    else :
+    pct = hp_ratio(hp, max_hp)  # 档位计算
+    if battery >= 60:
+        tier = "OK"
+    elif battery >= 20:
+        tier = "WARNING"
+    else:
         tier = "LOW"
     return f"{name:<10}|{robot_type:^10}|HP {pct:>3}%|BAT {battery:>3}%|{tier}"
 
 # ---------------------------------------------------------------------------
 # Q2 战斗日志分析（题面 Q2·多源日志解析与统计）
 # ---------------------------------------------------------------------------
+
+
 def _parse_line(line):
     """解析一行，合法返回 [(armor, damage), ...]，脏行返回 None。"""
     line = line.strip()
@@ -82,7 +86,7 @@ def _parse_line(line):
         return [(armor, damage, data.get("id"))]
     # ---- 再尝试传感器行 ----
     result = []
-    for part in line.split(","):   
+    for part in line.split(","):
         key, sep, value = part.partition(":")
         if sep != ":" or not key or not value:
             return None
@@ -94,13 +98,14 @@ def _parse_line(line):
         result.append((armor, int(value), None))
     return result if result else None
 
+
 def analyze_damage_log(lines):
     """TODO(Q2)：解析混合格式伤害日志，返回固定契约的统计 dict；
     行格式、去重与统计口径见题面 Q2 规范。"""
-    by_armor = { "front" : 0 , "left" : 0 , "right" : 0 }
-    total = 0 
-    event_count = 0 
-    seen_ids = set ()
+    by_armor = {"front": 0, "left": 0, "right": 0}
+    total = 0
+    event_count = 0
+    seen_ids = set()
     for line in lines:
         parsed = _parse_line(line)
         if parsed is None:
@@ -135,6 +140,8 @@ def analyze_damage_log(lines):
 # ---------------------------------------------------------------------------
 # Q3 SentryGrid（题面 Q3·载体物理规则）
 # ---------------------------------------------------------------------------
+
+
 class SentryGrid:
     """哨兵仿真载体（构造与只读属性已提供；四个 TODO 方法由你实现）。"""
 
@@ -159,9 +166,7 @@ class SentryGrid:
         self._facing = facing
         self._fuel = int(fuel)
         self._collision_count = 0
-        self._pos = self._clamp_cell(start_pos)
-        if self._pos in self._obstacles:
-            raise ValueError("start_pos 不能位于障碍物上")
+        self.current_pos = start_pos
 
     def _clamp_cell(self, cell):
         """已提供：元素转 int 并夹回地图范围（供 __init__ 使用）。"""
@@ -219,20 +224,56 @@ class SentryGrid:
     @current_pos.setter
     def current_pos(self, value):
         """TODO(Q3)：位置 setter；三重输入校验见题面 Q3 规范第 1 条。"""
-        raise NotImplementedError("Q3 current_pos.setter：题面 Q3·位置校验三步")
+        if not isinstance(value, (tuple, list)):
+            raise TypeError("current_pos 必须为 tuple/list")
+        if len(value) != 2:
+            raise TypeError("current_pos 必须为长度为 2 的 tuple/list")
+        value = tuple(value)
+        self._pos = self._clamp_cell(value)
+        if self ._pos in self ._obstacles:
+            raise ValueError("current_pos 不能位于障碍物上")
+        return self._pos
 
     def move_forward(self):
         """TODO(Q3)：朝当前 facing 前进一格，返回执行后的位置；
         碰撞、耗电与断电语义见题面 Q3 规范。"""
-        raise NotImplementedError("Q3 move_forward：题面 Q3·前进、碰撞与断电")
+        if self._fuel <= 0:
+            return self._pos
+        dx, dy = self._facing.delta
+        new_x = self._pos[0] + dx
+        new_y = self._pos[1] + dy
+        if self.is_blocked(new_x, new_y):
+            self._collision_count += 1
+            self._fuel -= 1
+            return self._pos
+        else:
+            self._pos = (new_x, new_y)
+            self._fuel -= 1
+            return self._pos
 
     def turn_left(self):
         """TODO(Q3)：原地左转 90°，返回新的 Facing（不耗电）。"""
-        raise NotImplementedError("Q3 turn_left")
+        if self._facing == Facing.UP:
+            self._facing = Facing.LEFT
+        elif self._facing == Facing.LEFT:
+            self._facing = Facing.DOWN
+        elif self._facing == Facing.DOWN:
+            self._facing = Facing.RIGHT
+        elif self._facing == Facing.RIGHT:
+            self._facing = Facing.UP
+        return self._facing
 
     def turn_right(self):
         """TODO(Q3)：原地右转 90°，返回新的 Facing（不耗电）。"""
-        raise NotImplementedError("Q3 turn_right")
+        if self._facing == Facing.UP:
+            self._facing = Facing.RIGHT
+        elif self._facing == Facing.RIGHT:
+            self._facing = Facing.DOWN
+        elif self._facing == Facing.DOWN:
+            self._facing = Facing.LEFT
+        elif self._facing == Facing.LEFT:
+            self._facing = Facing.UP
+        return self._facing
 
 
 # ---------------------------------------------------------------------------
@@ -241,12 +282,34 @@ class SentryGrid:
 def next_step_toward(pos, target, obstacles, current_facing=Facing.UP):
     """TODO(Q4)：返回下一步应朝向的 Facing；
     候选判定、优先级与回退规则见题面 Q4 规范。"""
-    raise NotImplementedError("Q4 next_step_toward：题面 Q4·贪心策略与回退")
+    x, y = pos
+    tx, ty = target
+    dx = tx - x
+    dy = ty - y
 
+    # 计算优先方向
+    if abs(dx) > abs(dy):
+        primary = Facing.RIGHT if dx > 0 else Facing.LEFT
+        secondary = Facing.UP if dy > 0 else Facing.DOWN
+    else:
+        primary = Facing.UP if dy > 0 else Facing.DOWN
+        secondary = Facing.RIGHT if dx > 0 else Facing.LEFT
+
+    # 检查候选方向是否可行
+    for facing in [primary, secondary]:
+        new_x = x + facing.delta[0]
+        new_y = y + facing.delta[1]
+        if (new_x, new_y) not in obstacles:
+            return facing
+
+    # 如果候选方向都不可行，保持当前朝向
+    return current_facing
 
 # ---------------------------------------------------------------------------
 # Q5 哨兵决策机（题面 Q5·裁判系统决策规则表）
 # ---------------------------------------------------------------------------
+
+
 class SentryState(Enum):
     """哨兵状态机（已提供，勿改）。"""
 
@@ -260,29 +323,207 @@ class SentryState(Enum):
 def decide(sensor, state, hp, heat):
     """TODO(Q5)：纯函数决策，返回 (action: str, new_state: SentryState)；
     sensor 字段契约、R1-R7 规则表与非法输入处理见题面 Q5 规范。"""
-    raise NotImplementedError("Q5 decide：题面 Q5·决策规则表 R1-R7")
+    # 数据校验
+    # ---- 输入契约校验：违反任一契约一律 ValueError ----
+    if not isinstance(sensor, dict):
+        raise ValueError("sensor 必须为 dict")
+
+    required = ("enemy_frames", "enemy_dist", "robot_type", "max_hp")
+    if any(key not in sensor for key in required):
+        raise ValueError("sensor 缺少必需字段")
+
+    frames = sensor["enemy_frames"]
+    if not isinstance(frames, (tuple, list)) or not (1 <= len(frames) <= 6):
+        raise ValueError("enemy_frames 必须是长度 1-6 的 tuple/list")
+
+    if not isinstance(state, SentryState):
+        raise ValueError("state 必须为 SentryState 成员")
+
+    hp_pct = hp_ratio(hp, sensor["max_hp"])
+    if hp_pct <= 30:  # R1
+        return ("RETREAT", SentryState.RETREAT)
+
+    elif state == SentryState.RETREAT:  # R2
+        if hp_pct > 30:
+            return ("RETURN", SentryState.RETURN)
+        else:
+            return ("RETREAT", SentryState.RETREAT)
+
+    elif state == SentryState.RETURN:  # R3
+        return ("MOVE_BASE", SentryState.PATROL)
+
+    frames = [bool(x) for x in sensor["enemy_frames"]]
+    visible = frames[-1]
+    dist = sensor["enemy_dist"]
+    # dist 合法形态是 int 或 None；None / 非法值按"远"处理，不参与贴脸判定
+    close = isinstance(dist, int) and not isinstance(dist, bool) and dist <= 3
+
+    if state == SentryState.ENGAGE and visible:  # R4
+        if close:
+            return ("SHOOT", SentryState.ENGAGE)
+        elif sensor["robot_type"] == "HERO":
+            return ("MOVE_RIGHT", SentryState.ENGAGE)
+        else:
+            return ("MOVE_LEFT", SentryState.ENGAGE)
+
+    elif state == SentryState.ENGAGE and not visible:  # R5
+        # 走到 R5 时 frames[-1] 已经是 False（不可见）
+        if len(frames) >= 2 and frames[-2]:
+            # 前一帧还看得到敌人，只有当前这一帧丢了 → 短暂丢失
+            return ("HOLD_FIRE", SentryState.ENGAGE)
+        else:
+            # 前一帧也看不到（或历史不足以证明刚丢失）→ 持续丢失
+            return ("SCAN", SentryState.SUSPECT)
+
+    elif (state == SentryState.PATROL or state == SentryState.SUSPECT) and visible:  # R6
+        if len(frames) >= 2 and frames[-2] and frames[-1]:
+            if close:
+                return ("SHOOT", SentryState.ENGAGE)
+            elif sensor["robot_type"] == "HERO":
+                return ("MOVE_RIGHT", SentryState.ENGAGE)
+            else:
+                return ("MOVE_LEFT", SentryState.ENGAGE)
+        else:
+            return ("SCAN", SentryState.SUSPECT)
+
+    elif (state == SentryState.PATROL or state == SentryState.SUSPECT) and not visible:  # R7
+        if state == SentryState.PATROL:
+            return ("PATROL_MOVE", SentryState.PATROL)
+        else:
+            return ("SCAN", SentryState.SUSPECT)
 
 
 # ---------------------------------------------------------------------------
 # Q6 巡逻任务（题面 Q6·巡逻契约与验收阈值）
 # ---------------------------------------------------------------------------
+# 模块级常量：沿墙走的转向表（左手规则）
+_LEFT = {Facing.UP: Facing.LEFT, Facing.LEFT: Facing.DOWN,
+         Facing.DOWN: Facing.RIGHT, Facing.RIGHT: Facing.UP}
+_RIGHT = {v: k for k, v in _LEFT.items()}
+_BACK = {f: _RIGHT[_RIGHT[f]] for f in Facing}
+
+
+def _manhattan(p, t):
+    return abs(p[0] - t[0]) + abs(p[1] - t[1])
+
+
+def _walkable(grid, pos, facing):
+    """facing 方向的下一格是否可走，返回 (bool, 下一格坐标)。"""
+    dx, dy = facing.delta
+    nxt = (pos[0] + dx, pos[1] + dy)
+    return not grid.is_blocked(nxt[0], nxt[1]), nxt
+
+
+def _align_facing(grid, desired):
+    """用最少的左右转把 facing 对齐到 desired（不耗电）。"""
+    order = [Facing.UP, Facing.RIGHT, Facing.DOWN, Facing.LEFT]
+    diff = (order.index(desired) - order.index(grid.facing)) % 4
+    if diff <= 2:
+        for _ in range(diff):
+            grid.turn_right()
+    else:
+        for _ in range(4 - diff):
+            grid.turn_left()
+
+
+def _wall_follow_facing(grid):
+    """左手规则：依次尝试 左转→直行→右转→掉头，取第一个可走方向。"""
+    f = grid.facing
+    for cand in (_LEFT[f], f, _RIGHT[f], _BACK[f]):
+        ok, _ = _walkable(grid, grid.current_pos, cand)
+        if ok:
+            return cand
+    return f
+
+
 def run_patrol(grid, max_steps=500):
-    """TODO(Q6)：sense → decide → act 主循环；
-    循环结构、终止条件、脱困自由度与统计返回契约见题面 Q6 规范。"""
-    raise NotImplementedError("Q6 run_patrol：题面 Q6·主循环与统计契约")
+    target = grid.enemy_pos
+    visited = {grid.current_pos}
+    steps = 0
+    mode = "greedy"
+    wall_steps = 0
+
+    while True:
+        # ---- 终止条件：到达 / 步数用尽 / 电量耗尽 ----
+        if grid.current_pos == target:
+            success = True
+            break
+        if steps >= max_steps or grid.fuel <= 0:
+            success = False
+            break
+
+        pos = grid.current_pos
+        cur_dist = _manhattan(pos, target)
+
+        # Q4 贪心提案，并判断"走这步是否真的更近"
+        g = next_step_toward(pos, target, grid.obstacles, grid.facing)
+        g_ok, g_nxt = _walkable(grid, pos, g)
+        greedy_good = g_ok and _manhattan(g_nxt, target) < cur_dist
+
+        # 贪心失速 → 切沿墙模式
+        if mode == "greedy" and not greedy_good:
+            mode = "wall"
+
+        if mode == "greedy":
+            desired = g
+        else:
+            desired = _wall_follow_facing(grid)
+            wall_steps += 1
+            # 距离重新可缩短 → 切回贪心
+            if greedy_good:
+                mode, desired, wall_steps = "greedy", g, 0
+            # TODO(调参)：wall_steps 过大说明在绕圈，
+            # 可换手（左手↔右手），这是作者从 80%→97% 的关键经验
+
+        # 先对齐、再前进 → 保证零碰撞
+        _align_facing(grid, desired)
+        grid.move_forward()
+        steps += 1
+        visited.add(grid.current_pos)
+
+    return {
+        "steps": steps,                          # move_forward 的次数
+        "collisions": grid.collision_count,
+        "visited_count": len(visited),
+        "found_enemy": success,                  # 与 success 同义
+        "success": success,
+    }
 
 
 def report_to_json(stats):
-    """TODO(Q6)：把 stats 序列化为确定性的 JSON 字符串，见题面 Q6 规范。"""
-    raise NotImplementedError("Q6 report_to_json：题面 Q6·报告序列化")
-
-
+    """确定性序列化：键排序 + 固定分隔符，保证同输入恒同输出。"""
+    return json.dumps(stats, sort_keys=True,
+                      separators=(",", ":"), ensure_ascii=False)
 # ---------------------------------------------------------------------------
 # Bonus：BFS 全局最短路（题面 Bonus·BFS 语义与排行榜）
 # ---------------------------------------------------------------------------
+
+
 def bfs_path_length(start, target, obstacles):
-    """TODO(Bonus)：BFS 全局最短路步数；返回语义与边界职责见题面 Bonus 规范。"""
-    raise NotImplementedError("Bonus bfs_path_length")
+    """BFS 全局最短路步数；返回语义与边界职责见题面 Bonus 规范。"""
+    start = tuple(start)
+    target = tuple(target)
+    blocked = {tuple(o) for o in obstacles}
+
+    if start == target:
+        return 0
+
+    directions = ((1, 0), (-1, 0), (0, 1), (0, -1))
+    visited = {start}
+    queue = deque([(start, 0)])
+
+    while queue:
+        (x, y), dist = queue.popleft()
+        for dx, dy in directions:
+            nxt = (x + dx, y + dy)
+            if nxt in visited or nxt in blocked:
+                continue
+            if nxt == target:
+                return dist + 1
+            visited.add(nxt)
+            queue.append((nxt, dist + 1))
+
+    return -1
 
 
 # ---------------------------------------------------------------------------
