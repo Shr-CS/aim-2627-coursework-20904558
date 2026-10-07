@@ -458,14 +458,40 @@ def _align_facing(grid, desired):
             grid.turn_left()
 
 
-def _wall_follow_facing(grid):
-    """左手规则：依次尝试 左转→直行→右转→掉头，取第一个可走方向。"""
+def _wall_follow_facing(grid, hand="L", avoid=()):
+    """贴墙走：按所选手侧的顺序取第一个可走方向。
+
+    hand="L"：左转 → 直行 → 右转 → 掉头；hand="R" 完全镜像。
+    avoid 是本次脱困已经走过的格子：优先挑没踩过的方向，避免在死角或
+    环里来回打转；四个方向都踩过时才退回正常贴墙顺序。
+    """
     f = grid.facing
-    for cand in (_LEFT[f], f, _RIGHT[f], _BACK[f]):
-        ok, _ = _walkable(grid, grid.current_pos, cand)
-        if ok:
+    if hand == "L":
+        order = (_LEFT[f], f, _RIGHT[f], _BACK[f])
+    else:
+        order = (_RIGHT[f], f, _LEFT[f], _BACK[f])
+    fallback = None
+    for cand in order:
+        ok, nxt = _walkable(grid, grid.current_pos, cand)
+        if not ok:
+            continue
+        if nxt not in avoid:
             return cand
-    return f
+        if fallback is None:
+            fallback = cand
+    return fallback if fallback is not None else f
+
+
+def _has_candidate(grid, target):
+    """四邻域中是否存在"非障碍且严格减距"的方向（题面 Q4 规范 1）。"""
+    pos = grid.current_pos
+    cur_dist = _manhattan(pos, target)
+    for facing in Facing:
+        nxt = (pos[0] + facing.delta[0], pos[1] + facing.delta[1])
+        if (not grid.is_blocked(nxt[0], nxt[1])
+                and _manhattan(nxt, target) < cur_dist):
+            return True
+    return False
 
 
 def run_patrol(grid, max_steps=500):
@@ -473,7 +499,11 @@ def run_patrol(grid, max_steps=500):
     visited = {grid.current_pos}
     steps = 0
     mode = "greedy"
-    wall_steps = 0
+    hand = "L"          # 贴墙手：L=左手规则，R=右手规则
+    wall_steps = 0      # 本次贴墙已经走了多少步
+    entry_dist = 0      # 进入贴墙那一刻到目标的曼哈顿距离
+    episode = set()     # 本次贴墙走过的格子（用于防打转）
+    limit = grid.width + grid.height   # 绕圈判定阈值（约等于地图尺度）
 
     while True:
         # ---- 终止条件：到达 / 步数用尽 / 电量耗尽 ----
@@ -492,26 +522,37 @@ def run_patrol(grid, max_steps=500):
         g_ok, g_nxt = _walkable(grid, pos, g)
         greedy_good = g_ok and _manhattan(g_nxt, target) < cur_dist
 
-        # 贪心失速 → 切沿墙模式
+        # 贪心失速 → 切沿墙模式，并记住进入时的距离
         if mode == "greedy" and not greedy_good:
-            mode = "wall"
+            mode, hand, wall_steps = "wall", "L", 0
+            entry_dist = cur_dist
+            episode = {pos}
 
         if mode == "greedy":
             desired = g
         else:
-            desired = _wall_follow_facing(grid)
-            wall_steps += 1
-            # 距离重新可缩短 → 切回贪心
-            if greedy_good:
-                mode, desired, wall_steps = "greedy", g, 0
-            # TODO(调参)：wall_steps 过大说明在绕圈，
-            # 可换手（左手↔右手），这是作者从 80%→97% 的关键经验
+            desired = _wall_follow_facing(grid, hand, episode)
 
         # 先对齐、再前进 → 保证零碰撞
         _align_facing(grid, desired)
         grid.move_forward()
         steps += 1
         visited.add(grid.current_pos)
+
+        # ---- 沿墙模式的退出/换挡判据（按序求值，首条命中即生效） ----
+        if mode == "wall":
+            episode.add(grid.current_pos)
+            wall_steps += 1
+            if wall_steps > 3 * limit and hand == "L":
+                # 左手绕不出去 → 换右手再试
+                hand, wall_steps = "R", 0
+            elif wall_steps > 6 * limit:
+                # 两只手都绕不动 → 放弃贴墙，回贪心重新尝试
+                mode, wall_steps = "greedy", 0
+            elif (_has_candidate(grid, target)
+                  and _manhattan(grid.current_pos, target) < entry_dist + 1):
+                # 已经绕出死角（距离不劣于进入贴墙时）→ 切回贪心
+                mode, wall_steps = "greedy", 0
 
     return {
         "steps": steps,                          # move_forward 的次数
