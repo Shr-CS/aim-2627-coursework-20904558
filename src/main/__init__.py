@@ -311,8 +311,18 @@ def next_step_toward(pos, target, obstacles, current_facing=Facing.UP):
     tx, ty = target
     dx = tx - x
     dy = ty - y
+    cur_dist = abs(dx) + abs(dy)
 
-    # 计算优先方向
+    def is_candidate(facing):
+        """候选方向 = 相邻格非障碍 且 移动后曼哈顿距离严格减小。"""
+        nx = x + facing.delta[0]
+        ny = y + facing.delta[1]
+        if (nx, ny) in obstacles:
+            return False
+        return abs(tx - nx) + abs(ty - ny) < cur_dist
+
+    # 优先轴 = 与目标绝对坐标差较大的轴；
+    # 候选只可能出现在两个轴向的"朝目标"方向上，故检查这两个即可
     if abs(dx) > abs(dy):
         primary = Facing.RIGHT if dx > 0 else Facing.LEFT
         secondary = Facing.UP if dy > 0 else Facing.DOWN
@@ -320,14 +330,11 @@ def next_step_toward(pos, target, obstacles, current_facing=Facing.UP):
         primary = Facing.UP if dy > 0 else Facing.DOWN
         secondary = Facing.RIGHT if dx > 0 else Facing.LEFT
 
-    # 检查候选方向是否可行
-    for facing in [primary, secondary]:
-        new_x = x + facing.delta[0]
-        new_y = y + facing.delta[1]
-        if (new_x, new_y) not in obstacles:
+    for facing in (primary, secondary):
+        if is_candidate(facing):
             return facing
 
-    # 如果候选方向都不可行，保持当前朝向
+    # 不存在任何严格减距的候选（含 pos == target 的退化情形）→ 保持当前朝向
     return current_facing
 
 # ---------------------------------------------------------------------------
