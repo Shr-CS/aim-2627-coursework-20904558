@@ -255,7 +255,7 @@ class SentryGrid:
             raise TypeError("current_pos 必须为长度为 2 的 tuple/list")
         value = tuple(value)
         self._pos = self._clamp_cell(value)
-        if self ._pos in self ._obstacles:
+        if self._pos in self._obstacles:
             raise ValueError("current_pos 不能位于障碍物上")
         return self._pos
 
