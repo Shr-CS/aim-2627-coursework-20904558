@@ -41,8 +41,7 @@ def hp_ratio(hp, max_hp):
         return 0
     elif hp > max_hp:
         return 100
-    # 整数取整：int(hp / max_hp * 100) 会被浮点误差吃掉 1
-    # （例如 29 / 100 * 100 == 28.999999999999996 → 28）
+    #要考虑浮点误差
     denominator = int(max_hp)
     if denominator <= 0:
         return 0
