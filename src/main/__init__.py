@@ -65,8 +65,22 @@ def status_report(name, robot_type, hp, max_hp, battery):
 # ---------------------------------------------------------------------------
 
 
+def _positive_int(text):
+    """严格解析十进制正整数；不是合法正整数时返回 None。
+
+    不能只用 str.isdigit()：'²' 这类字符 isdigit() 为真但 int() 会抛 ValueError，
+    题面 Q2 要求解析全程不得抛异常，所以额外要求 ASCII 字符集。
+    """
+    if not text or not text.isascii() or not text.isdigit():
+        return None
+    value = int(text)
+    return value if value > 0 else None
+
+
 def _parse_line(line):
     """解析一行，合法返回 [(armor, damage), ...]，脏行返回 None。"""
+    if not isinstance(line, str):      # 非字符串一律按脏行处理，不得抛异常
+        return None
     line = line.strip()
 
     # 空行 / 注释
@@ -97,10 +111,11 @@ def _parse_line(line):
             return None
         if key not in ("F", "L", "R"):
             return None
-        if not value.isdigit() or int(value) <= 0:
+        damage = _positive_int(value)
+        if damage is None:
             return None
         armor = {"F": "front", "L": "left", "R": "right"}[key]
-        result.append((armor, int(value), None))
+        result.append((armor, damage, None))
     return result if result else None
 
 
@@ -111,7 +126,7 @@ def analyze_damage_log(lines):
     total = 0
     event_count = 0
     seen_ids = set()
-    for line in lines:
+    for line in (lines or ()):
         parsed = _parse_line(line)
         if parsed is None:
             continue
@@ -119,7 +134,12 @@ def analyze_damage_log(lines):
         # parsed 形如 [(armor, damage, id), ...]
         event_id = parsed[0][2]
         if event_id is not None:
-            if event_id in seen_ids:
+            try:
+                duplicated = event_id in seen_ids
+            except TypeError:
+                # id 不是可哈希的标量 → 该行字段非法，按脏行跳过
+                continue
+            if duplicated:
                 continue
             seen_ids.add(event_id)
 
